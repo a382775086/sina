@@ -1,615 +1,14 @@
-const huichuanToken = 'ZDM0ZWQ1MDctMjkxYi00NmEyLWJhNzMtODI3MTZlNDlmMGE4'
-
-onMounted(async () => {
-	const projectIdentifier = 'KELAN02'
-	const res = await getProgramMsg(projectIdentifier) //地址栏传入的 projectIdentifier
-	const property = res.data.data[0].property
-	const res1 = await getProgramMsg1(property)
-	const pathName = res1.data.data['model.pathName']
-	const res2 = await getProgramMsg2(pathName)
-	const res3 = await getProgramMsg3({
-		filter: `status ne 2,pathName leftlike ${pathName}/`,
-		models: res2.data.data.map(item => item.identifier).join(','),
-		orderBy: 'createTime desc',
-		projectIdentifier: projectIdentifier, //地址栏传入的 projectIdentifier
-	})
-	window.identifierList = res3.data.data
-})
-
-//home 
-<!-- /**
- * @Date 2023-03-15 10:16:03 施磊鉴
- * @introduction 地图组件
- * @param {参数类型} 参数 参数说明
- * @return {返回类型说明}
- */ -->
 <template>
-	<div class="map">
-		<div id="map"></div>
-		<div id="map2"></div>
-	</div>
-	<rightClickMenu />
-</template>
-<script setup>
-import { nextTick, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
-import { getMapById, getTemplateById } from '@/api/request.js'
-import { setSaveJson } from '@/utils/jsonSetting'
-import getElementList from '@/utils/getElementList.ts'
-import useStore from '@/store'
-import { initHcFunction, BindEventClass } from '@/utils/mapUtils'
-import { addServerData, addCustomLayer } from '@/utils/methods/sceneLayer.js'
-import graphic from '@/utils/graphic.js'
-import rightClickMenu from '@/components/rightClickMenu/index.vue'
-import bindEvent from './eventTrigger'
-import EventBus from '@/utils/bus'
-const emits = defineEmits(['getDataCallBack'])
-const store = useStore()
-const router = useRouter()
-const initScene = () => {
-	// window.globalData.scene.methods.skyBoxInit()
-	// window.globalData.scene.methods.groundInit()
-	// window.globalData.scene.methods.cameraInit()
-	// window.globalData.scene.methods.globeInit()
-	// map.clock.currentTime = CooGL.JulianDate.fromDate(
-	//   new Date('2022-10-27T12:00:00')
-	// )
-	globalData.scene.methods.init()
-}
-
-const initLayer = () => {
-	globalData.layer.methods.init()
-}
-
-const initServerData = () => {
-	if (globalData.serverDataMap.length) {
-		globalData.serverDataMap.forEach(item => {
-			addServerData(Object.assign(item, { layerShow: true }), false)
-		})
-	}
-}
-const initCustomData = () => {
-	if (globalData.customLayer.length) {
-		globalData.customLayer.forEach(item => {
-			addCustomLayer(Object.assign(item, { layerShow: true }), false)
-		})
-	}
-}
-const initGraphics = () => {
-	Object.keys(globalData.graphicsParameters).forEach(id => {
-		globalData.graphicMethods.addByGraphicParameters(globalData.graphicsParameters[id])
-		const paramObj = globalData.graphicsParameters[id]
-		if (paramObj.show === false) {
-			setTimeout(() => {
-				globalData.graphics[id].show = false
-			}, 3000)
-		}
-	})
-}
-
-const initCooGis = async content => {
-	// cooserver配置
-	// const isDev = import.meta.env.DEV
-	CooGL.CooServer.address = cooServerAddress
-	CooGL.CooServer.defaultAccessToken = globalData.token
-	const id = router.currentRoute.value.query?.id
-	const tmp = router.currentRoute.value.query?.tmp
-	let res
-	if (!content) {
-		if (tmp === 'true') {
-			res = await getTemplateById(id)
-		} else {
-			res = await getMapById(id)
-		}
-	} else {
-		let mks = Object.keys(globalData.graphics)
-		if (mks.length) {
-			mks.map(k => {
-				globalData.graphicMethods.removeGraphicByid(k)
-			})
-		}
-		res = { data: { data: { content } } }
-	}
-
-	// res.data.data.content = res.data.data.content.replace(
-	//   /http:\/\/192\.168\.10\.202:9091/g,
-	//   ''
-	// )
-	setSaveJson(res.data.data.content)
-	emits('getDataCallBack')
-	getElementList()
-	// HTMLCanvasElement.prototype.toDataURL = () => {}
-	// setTimeout(() => {
-	//   HTMLCanvasElement.prototype.toDataURL = toDataURLFn
-	// }, 10000)
-	const mapConfig = {
-		bottom: true,
-		// initializeAnimation: false,
-		// menu: false,
-		// timeline: true,
-		// environment: './env.hdr',
-		// defaultView: globalData.scene.methods.getCameraView(),
-	}
-	if (!Reflect.has(window.map || {}, 'layers')) {
-		const map = new CooGL.EditorViewer('map', {
-			defaultView: globalData.scene.methods.getCameraView(),
-		})
-		window.map = map
-		// map.camera.maximumZoomDistance = 10000
-		map.camera.minimumZoomDistance = 0
-		let canMove = false
-		//吸附事件初始化
-		document.addEventListener('keydown', function (ev) {
-			const keyCode = ev.key
-			if (keyCode === 'g' && CooGL.defined(map.link.editor)) {
-				canMove = true
-			}
-		})
-		document.addEventListener('dblclick', ev => {
-			map.link.move()
-			canMove = false
-			// map.linkEnabled = false
-			map.link.editor = undefined
-		})
-		map.event.mousemove(function (ev) {
-			if (canMove && CooGL.defined(map.link.editor)) {
-				const position = ev.point
-				map.link.editor.position = position
-				map.link.update()
-			}
-		})
-		map.event.pick(ev => {
-			const source = ev.layer
-			if (source instanceof CooGL.EditorModel) {
-				map.link.editor = source
-				if (canMove) canMove = false
-			}
-		})
-	}
-
-	observeModelHeight()
-	//泛光关闭
-	// map.effects.bloomEnabled = false
-	// globalData.vueMount()
-	globalData.graphicConfig.editor.enabled = true
-	initScene()
-	// initLayer()
-	initGraphics()
-	bindEvent(store, EventBus)
-	addBaseMap()
-	//TODO:临时代码
-	window.customPipeMap = {}
-	initHcFunction()
-	addCustomCode()
-	const bindClass = new BindEventClass()
-	window.bindClass = bindClass
-
-	//加载基础图层服务数据
-	initServerData()
-	//加载自定义图层
-	initCustomData()
-}
-window.initCooGis = initCooGis
-
-const addCustomCode = () => {
-	customCode()
-}
-
-window.closeDialog = () => {
-	window.tempDialog?.destroy()
-}
-
-//添加默认底图
-const addBaseMap = () => {
-	setTimeout(() => {
-		const { x, y } = map.getView().destination
-		map
-			.addModel(
-				new CooGL.GltfEditorModel({
-					// position: {
-					// 	x: 0,
-					// 	y: 0,
-					// 	z: 0,
-					// },
-					position: {
-						x,
-						y,
-						z: -0.01,
-					},
-					url: './baseMap.glb',
-					color: 'rgba(0,0,0,0.01)',
-					scale: new CooGL.Vector3(100, 100, 100),
-				})
-			)
-			.then(res => {
-				ElMessage.success('地图初始化完成')
-			})
-	}, 2000)
-}
-//添加模型高度监听，不允许低于height=0
-
-const observeModelHeight = () => {
-	map.editor.propertyUpdateEvent.addEventListener((p1, p2) => {
-		if (p1.id.startsWith('glWall_')) {
-			EventBus.$emit('updataWallForm', p1)
-		} else if (p1.id.startsWith('glPolygon_')) {
-			EventBus.$emit('updataPolygonForm', p1)
-		} else if (p1.id.startsWith('glPolyline_')) {
-			EventBus.$emit('updatapolygonLineForm', p1)
-		} else {
-			if (p1.position.z < 0) {
-				const position = CooGL.Vector3.clone(p1.position)
-				position.z = 0
-				map.editor.position = position
-			}
-		}
-	})
-}
-
-onMounted(() => {
-	nextTick(() => {
-		initCooGis()
-	})
-})
-</script>
-<style lang="scss">
-.map {
-	position: absolute;
-	left: 0;
-	right: 0;
-	bottom: 0;
-	top: 0;
-	height: 100%;
-	overflow: hidden;
-	width: 100%;
-	display: flex;
-}
-.compo-status-bar-logo,
-.compo-status-bar-mouseover {
-	width: 0 !important;
-	height: 0 !important;
-	overflow: hidden;
-}
-#map {
-	width: 100%;
-	height: 100%;
-}
-.dialog-attr-wrap {
-	position: relative;
-	background: rgba(0, 0, 0, 0.6);
-	color: #fff;
-	padding: 12px;
-	min-width: 300px;
-	.dialog-header {
-		position: relative;
-		height: 30px;
-		line-height: 30px;
-		.dialog-close {
-			position: absolute;
-			font-size: 12px;
-			right: 0px;
-			top: 0px;
-			cursor: pointer;
-		}
-	}
-}
-</style>
-
-//preview
-<!-- /**
- * @Date 2023-03-15 10:16:03 施磊鉴
- * @introduction 地图组件
- * @param {参数类型} 参数 参数说明
- * @return {返回类型说明}
- */ -->
-<template>
-	<div class="map">
-		<div id="map"></div>
-		<div id="map2"></div>
-	</div>
-</template>
-<script setup>
-import { nextTick, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
-import { getMapById, getModels, getTemplateById } from '@/api/request.js'
-import { setSaveJson } from '@/utils/jsonSetting'
-import graphic from '@/utils/graphic.js'
-import bindEvent from './eventTrigger'
-import useStore from '@/store'
-import { initHcFunction, BindEventClass } from '@/utils/mapUtils'
-import { addServerData, addCustomLayer } from '@/utils/methods/sceneLayer.js'
-import EventBus from '@/utils/bus'
-
-const router = useRouter()
-const store = useStore()
-const initScene = () => {
-	// window.globalData.scene.methods.skyBoxInit()
-	// window.globalData.scene.methods.groundInit()
-	// window.globalData.scene.methods.cameraInit()
-	// window.globalData.scene.methods.globeInit()
-	// map.clock.currentTime = CooGL.JulianDate.fromDate(
-	//   new Date('2022-10-27T12:00:30')
-	// )
-	globalData.scene.methods.init()
-}
-
-const initLayer = () => {
-	globalData.layer.methods.init()
-}
-
-const initServerData = () => {
-	if (globalData.serverDataMap.length) {
-		globalData.serverDataMap.forEach(item => {
-			addServerData(Object.assign(item, { layerShow: true }), false)
-		})
-	}
-}
-
-const initCustomData = () => {
-	if (globalData.customLayer.length) {
-		globalData.customLayer.forEach(item => {
-			addCustomLayer(Object.assign(item, { layerShow: true }), false)
-		})
-	}
-}
-
-const initGraphics = () => {
-	Object.keys(globalData.graphicsParameters).forEach(id => {
-		globalData.graphicMethods.addByGraphicParameters(globalData.graphicsParameters[id])
-		const paramObj = globalData.graphicsParameters[id]
-		if (paramObj.show === false) {
-			setTimeout(() => {
-				globalData.graphics[id].show = false
-			}, 3000)
-		}
-	})
-}
-
-const initCooGis = async () => {
-	// cooserver配置
-	// const isDev = import.meta.env.DEV
-	CooGL.CooServer.address = cooServerAddress
-	CooGL.CooServer.defaultAccessToken = globalData.token
-	const id = router.currentRoute.value.query?.id
-	const tmp = router.currentRoute.value.query?.tmp
-	let res
-	if (tmp === 'true') {
-		res = await getTemplateById(id)
-	} else {
-		res = await getMapById(id)
-	}
-	setSaveJson(res.data.data.content)
-
-	// HTMLCanvasElement.prototype.toDataURL = () => {}
-	// setTimeout(() => {
-	//   HTMLCanvasElement.prototype.toDataURL = toDataURLFn
-	// }, 10000)
-	const mapConfig = {
-		bottom: false,
-		initializeAnimation: false,
-		menu: false,
-		defaultView: globalData.scene.methods.getCameraView(),
-	}
-	const map = new CooGL.EditorViewer('map', mapConfig)
-	window.map = map
-	// globalData.vueMount()
-	globalData.graphicConfig.editor.enabled = false
-	initScene()
-	// initLayer()
-	initGraphics()
-	window.customPipeMap = {}
-	bindEvent(store, EventBus)
-	initHcFunction()
-	// map.camera.controller.maximumZoomDistance = 30
-	map.camera.controller.minimumZoomDistance = 5
-	addCustomCode()
-	const bindClass = new BindEventClass()
-	window.bindClass = bindClass
-
-	//加载基础图层服务数据
-	initServerData()
-	//加载自定义图层
-	initCustomData()
-}
-const addCustomCode = () => {
-	customCode()
-}
-const getData = () => {
-	getModels().then(res => {
-		window.groupObj = {}
-		res.data.data.forEach(list => {
-			for (let item of list.iconFileList) {
-				window.groupObj[item.fileUrl] = item
-			}
-		})
-	})
-}
-
-onMounted(() => {
-	getData()
-	nextTick(() => {
-		initCooGis()
-	})
-})
-</script>
-<style lang="scss">
-.map {
-	position: absolute;
-	left: 0;
-	right: 0;
-	bottom: 0;
-	top: 0;
-	height: 100%;
-	overflow: hidden;
-	width: 100%;
-	display: flex;
-}
-#map {
-	width: 100%;
-	height: 100%;
-}
-</style>
-
-//popup/index
-<template>
-	<div class="popup">
-		<div v-if="mapCompleted">
-			<Temp1 v-for="id in store.dialogList" :key="id" :id="id" />
-			<!-- 独立单一点击数据弹窗 -->
-			<Temp1 v-if="store.clickedDialogId" :id="store.clickedDialogId" />
-		</div>
-	</div>
-	<!-- 点击显示的数据 -->
-	<WarnDialog />
-</template>
-
-<script setup>
-import useStore from '@/store'
-import Temp1 from './temp1.vue'
-import { getIotData, setIotData, getIotDetail } from '@/api/request.js'
-import EventBus from '@/utils/bus'
-import { LOOP_TIME } from '@/constants'
-
-const store = useStore()
-//轮询时间
-let timeout = null
-// 加载完成
-const mapCompleted = ref(false)
-
-globalData.popups = {}
-
-// 左键地图监听事件，用来打开冒泡弹窗
-let leftClick
-
-const loop2 = async () => {
-	const requestList = []
-	for (const id of store.dialogList) {
-		requestList.push(
-			...globalData.graphicsParameters[id].data.keyMap.map(v => v.key).filter(v => v)
-		)
-	}
-	if (requestList.length) {
-		const arr = [...new Set(requestList)]
-		if (arr.length) {
-			im.send(
-				{
-					messageType: 'REALTIME_DATA_REQ',
-					data: {
-						items: arr,
-						type: 1,
-						timeout: 30, // 请求生效，会持续上报30分钟数据
-						reportingFrequency: '0/2 * * * * ?',
-					},
-				},
-				'33'
-			)
-		}
-	}
-
-	timeout = setTimeout(loop2, LOOP_TIME * 1000)
-}
-const loop = async () => {
-	const requestList = []
-	for (const id of store.dialogList) {
-		requestList.push(...globalData.graphicsParameters[id].data.keyMap.map(v => v.key))
-	}
-
-	if (!requestList.length) return
-	const arr = [...new Set(requestList)]
-	const res = await getIotData({ propertyIdentifiers: arr })
-	//FIXME:mock
-	if (window.tempRealData) {
-		// const num = Math.ceil(Math.random() * 5)
-		res.data.data[0].dataValue = window.tempRealData
-	}
-	const data = res?.data?.data
-	bindClass.handleRealData(data)
-	for (const id of store.dialogList) {
-		globalData.popups[id].updateData(data)
-	}
-	timeout = setTimeout(loop, LOOP_TIME * 1000)
-}
-
-const closeLoop = () => {
-	if (timeout) {
-		clearTimeout(timeout)
-		timeout = null
-	}
-}
-
-const addDialogStatus = () => {
-	for (let i in globalData.graphicsParameters) {
-		const { data, dialogOption, id } = globalData.graphicsParameters[i]
-		if (
-			dialogOption?.isConstantDialog &&
-			dialogOption?.isDialogVisible &&
-			data.dataTypeList?.includes('REALTIME_DATA')
-		) {
-			store.dialogList.add(id)
-		}
-	}
-}
-
-globalData.mapOnMounted(() => {
-	mapCompleted.value = true
-	addDialogStatus()
-	setTimeout(loop2, LOOP_TIME * 1000)
-})
-
-const refreshDialogStatus = () => {
-	store.dialogList.clear()
-	nextTick(addDialogStatus)
-}
-EventBus.$on('refreshDialogStatus', refreshDialogStatus)
-const addByType = parameters => {
-	const id = parameters?.id
-	if (!id) return
-	const type = id.split('_')[0]
-	switch (type) {
-		case 'glText':
-			break
-		case 'glModel':
-			store.dialogList.add(id)
-			break
-	}
-}
-// 添加
-const graphicAddFn = data => {
-	// lists.value[data.type].push(data.params)
-	addByType(data.params)
-}
-// 删除
-const graphicDeleteFn = data => {
-	delete globalData.popups[data.id]
-	popupList.value = popupList.value.filter(v => {
-		return v.id !== data.id
-	})
-}
-
-onBeforeUnmount(() => {
-	if (timeout) {
-		clearTimeout(timeout)
-		timeout = null
-	}
-})
-</script>
-
-<style lang="scss" scoped>
-.popup {
-	position: fixed;
-	top: 100px;
-	left: 300px;
-	z-index: 10;
-	pointer-events: auto;
-}
-</style>
-
-//modifiedvaluepop
-<template>
-	<el-dialog ref="dom" v-model="dialogShow" title="修改属性" width="20%">
+	<el-dialog ref="dom" v-model="dialogShow" title="属性值更新" width="20%">
 		<div class="align-center">
-			<span style="width: 100px">新值{{ inputValue }}</span>
-			<el-switch v-if="option" v-model="inputValue" @change="setData" />
+			<span style="width: 100px">修改值：</span>
+			<el-switch
+				v-if="props.option.valueType === 'BOOLEAN'"
+				:model-value="switchValue"
+				@change="changeInputValue"
+				active-text="开启"
+				inactive-text="关闭"
+			/>
 			<el-input
 				v-else
 				type="number"
@@ -631,6 +30,8 @@ import { getIotData, setIotData, getIotDetail } from '@/api/request.js'
 import useStore from '@/store'
 const store = useStore()
 const dialogShow = ref(true)
+
+const switchValue = computed(() => (inputValue.value === 'false' ? false : true))
 // const dialogVisible = defineModel<Boolean>({})
 const inputValue = ref('')
 const dom = ref(null)
@@ -646,6 +47,10 @@ const props = defineProps({
 	},
 })
 const emits = defineEmits(['close'])
+const changeInputValue = v => {
+	inputValue.value = v + ''
+	console.log(switchValue)
+}
 const setData = async () => {
 	const deviceName = props.dataIdentifier.split('_')[0] + '_' + props.dataIdentifier.split('_')[1]
 	const detailRes = await getIotDetail(deviceName)
@@ -692,7 +97,7 @@ const setData = async () => {
 //   }))
 // }
 onMounted(() => {
-	console.warn()
+	console.warn(props.option)
 })
 </script>
 
@@ -707,7 +112,8 @@ onMounted(() => {
 </style>
 
 
-//temp1
+temp1
+
 <template>
 	<div
 		v-if="dialogStyle === 'custom2'"
@@ -765,7 +171,7 @@ onMounted(() => {
 					<div class="hc-marker-item-label">
 						{{ n.name }}
 					</div>
-					<div style="width: 8rem" class="hc-marker-item-value">
+					<div style="width: 6rem" class="hc-marker-item-value">
 						<ElTooltip :content="formatterValue(n.value)" placement="top">
 							<span class="bold" :id="n.dataIdentifier" :style="styleFn(n.value)">{{
 								formatterValue(n.value)
@@ -911,8 +317,7 @@ const setData = async (dataIdentifier, value) => {
 	if (res?.data?.data?.length) {
 		ElMessage.success('修改成功')
 		//FIXME:
-		window.tempRealData = inputValue.value
-		emits('close')
+		// window.tempRealData = inputValue.value
 	} else ElMessage.error('修改失败')
 }
 
@@ -1005,12 +410,11 @@ const updateData = data => {
 		return {
 			value: '暂无数据',
 			name: v.name,
-			valueType: obj.dataType,
+			valueType: obj?.dataType,
 			isScroll: v.isScroll || false,
 			dataIdentifier: v.identifier,
 		}
 	})
-	const tempValueList = list.value.map(v => +v.value)
 	//极简模式，需要手动更新设备状态
 	if (dialogStyle.value === 'custom2') {
 		const item = list.value.find(v => v.value === 'true' || v.value === 'false')
@@ -1018,6 +422,7 @@ const updateData = data => {
 			deviceStatusStr.value = formatterObj[window.testStatus ?? item.value]
 		}
 	}
+	if (baseData.headStatusVisible) setRightHeadText()
 }
 
 let tableCurrentItemIndex = null
@@ -1030,7 +435,13 @@ const updateScrollStatus = bool => {
 
 const updateHeadStatus = (bool: boolean) => {
 	baseData.headStatusVisible = bool
-	deviceStatusStr.value = formatterObj[bool + '']
+	setRightHeadText()
+}
+const setRightHeadText = () => {
+	//指定的开关的属性
+	const item = list.value.find(v => v.valueType === 'BOOLEAN')
+	if (!item) return (deviceStatusStr.value = '暂无数据')
+	deviceStatusStr.value = formatterObj[item.value]
 }
 
 const updateDialogStyle = (value = '') => {
@@ -1131,7 +542,7 @@ const removeDialog = () => {
 
 onMounted(() => {
 	baseDataInit()
-	updateScrollStatus()
+	updateScrollStatus(true)
 	const { position } = params.dialogOption
 	domGraphic = new createGraphicDom({
 		position: [position?.x, position?.y, position?.z],
@@ -1272,4 +683,128 @@ onBeforeUnmount(removeDialog)
 	}
 }
 </style>
+
+warning-dialog
+
+<script setup lang="ts">
+import { getWarningData } from '@/api/request.js'
+import temp2 from './temp2.vue'
+import { LOOP_TIME } from '@/constants'
+const graphicsParametersList = ref([])
+let timeout: ReturnType<typeof setTimeout> | null = null
+const showWarningDialog = ref(false)
+window.showWarningDialog = showWarningDialog
+const getData = async () => {
+	const list = Object.values(globalData.graphicsParameters)
+		.filter(v => v.data?.dataTypeList?.includes('ALARM_DATA'))
+		.map(v => v.data.regCodeIdentifier)
+		.filter(v => v)
+	if (!list.length) {
+		graphicsParametersList.value = []
+		return (timeout = setTimeout(getData, LOOP_TIME * 1000))
+	}
+	const str = list.join('::')
+	const res = await getWarningData(1, 1, str)
+	//FIXME:
+	const data = res.data.data.result.map(v => {
+		v.deviceIdentifier = 'KELAN03_INS1'
+		v.projectIdentifier = 'KELAN03'
+		return v
+	})
+	graphicsParametersList.value = data.map(item => {
+		const params = Object.values(globalData.graphicsParameters).filter(
+			v =>
+				v.data?.identifier === item.deviceIdentifier && v.data?.dataTypeList.includes('ALARM_DATA')
+		)
+		params.forEach(v => {
+			v.data.warningData = item
+		})
+		return params
+	})
+	timeout = setTimeout(getData, LOOP_TIME * 1000)
+}
+
+const closeDialog = (index1, index2) => {
+	// graphicsParametersList.value
+}
+
+onMounted(() => {
+	getData()
+})
+onBeforeUnmount(() => {
+	if (timeout) {
+		clearTimeout(timeout)
+		timeout = null
+	}
+})
+</script>
+<template>
+	<div class="warning-dialog">
+		<template v-for="(warningList, k) in graphicsParametersList" :key="k">
+			<div
+				v-for="(graphicsParametersItem, kk) in warningList"
+				:key="kk"
+				:id="graphicsParametersItem.id"
+				:warningData="graphicsParametersItem"
+			>
+				<temp2
+					v-if="showWarningDialog"
+					:graphicsParametersItem="graphicsParametersItem"
+					@closeDialog="closeDialog(k, kk)"
+				></temp2>
+			</div>
+		</template>
+	</div>
+</template>
+<style scoped lang="scss">
+.warning-dialog {
+	// :deep(.el-dialog) {
+	//   background-color: rgba(32, 27, 21, 0.6);
+	//   .el-dialog__title {
+	//     font-weight: bold;
+	//     color: #fff;
+	//     font-family: Source Han Sans CN, Source Han Sans CN;
+	//   }
+	// }
+}
+</style>
+
+ws.js
+
+import IM from 'webtools-instant-messaging'
+// 前后端服务部署到一起可使用window.location.host
+const host = '10.44.218.94'
+// 可根据实际情况获取token
+const token = huichuanToken
+// 可根据实际情况生成clientId
+const clientId = IM.getSign(`${window.location.origin}${window.location.pathname}${token}`)
+
+export default function (store) {
+	const im = new IM({
+		url: `ws://${host}/api/instant-messaging/ws?token=bearer%20${token}&clientId=${clientId}`,
+		messageListener: promise => {
+			if (promise instanceof Promise) {
+				promise
+					.then(res => {
+						if (res.messageType === 'REALTIME_DATA_REPORT') {
+							window.bindClass.handleRealData(res.data)
+							for (const id of store.dialogList) {
+								// if (id === 'glModel_178c8daf-47ac-9f86-39b5-60c6def2103a') {
+								if (
+									window.globalData.graphicsParameters[id].data.identifier ===
+									res.data[0].deviceIdentifier
+								) {
+									window.globalData.popups[id].updateData(res.data)
+								}
+							}
+						}
+					})
+					.catch(err => {
+						// ...异常处理
+					})
+			}
+		},
+	})
+	window.im = im
+}
 
